@@ -43,7 +43,6 @@ typedef struct {
     int restockThreshold;
     pthread_mutex_t lock; // Mutex for synchronizing access to the product
     char semName[30];     // Name of the semaphore for each product
-    int team_working_on_it;
 
 
 } Product;

@@ -98,7 +98,6 @@ int check_finish(){
 
 
     if(  current_hour >= the_end && current_minutes >= the_end_minutes){
-        printf("The supermarket is closed Time Finish SEE YOU TOMORROW \n");
         return 1;
     }
     return 0;

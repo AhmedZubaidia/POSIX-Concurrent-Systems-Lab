@@ -1,0 +1,24 @@
+# Build artefacts
+main
+customer
+drawer
+timer
+shelving_team
+*.o
+*.a
+build/
+
+# IDE / editor metadata
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Misc
+*.zip
+core
+core.*

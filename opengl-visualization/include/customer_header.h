@@ -64,22 +64,21 @@ void pick_up_items(struct Customer *customer) {
  //   printf("Random Number: %d ... customer %d \n", random_number, customer->id);
 
     int last_picked_index = -1;
-
-    int shmid = shmget(ITM_SMKEY, num_of_products * sizeof(Product), 0666);
-    if (shmid == -1) {
-        perror("shmget");
-        exit(EXIT_FAILURE);
-    }
-
-    Product *shared_items = (Product *)shmat(shmid, NULL, 0);
-    if (shared_items == (Product *)-1) {
-        perror("shmat");
-        exit(EXIT_FAILURE);
-
-    }
-
-
     for (int i = 0; i < random_number; ++i) {
+
+        int shmid = shmget(ITM_SMKEY, num_of_products * sizeof(Product), 0666);
+        if (shmid == -1) {
+            perror("shmget");
+            exit(EXIT_FAILURE);
+        }
+
+        Product *shared_items = (Product *)shmat(shmid, NULL, 0);
+        if (shared_items == (Product *)-1) {
+            perror("shmat");
+            exit(EXIT_FAILURE);
+
+        }
+
 
 
         // Check if all Storage have quantity = 0 to end the program.
@@ -91,6 +90,7 @@ void pick_up_items(struct Customer *customer) {
             }
         }
         if (all_storage_zero) {
+
 
             // Acquire semaphore for picking up items
             printf("\n the storage is empty \n");
@@ -124,10 +124,9 @@ void pick_up_items(struct Customer *customer) {
 
         // Acquire semaphore for picking up items
         pick_product_semaphore = get_semaphore(shared_items[random_index].semName);
-
         lock_sem(pick_product_semaphore);
 
-         if(shared_items[random_index].shelfAmount <= 0){
+        if(shared_items[random_index].shelfAmount <= 0){
             unlock_sem(pick_product_semaphore);
             close_semaphore(pick_product_semaphore);
             continue;
@@ -137,24 +136,21 @@ void pick_up_items(struct Customer *customer) {
         customer->cart[i] = random_index;
         customer->num_items++;
 
-        sleep(1); // sleep for pick one item from shelf and put it in cart. other customers will wait. 1 second.
-
         unlock_sem(pick_product_semaphore);
         close_semaphore(pick_product_semaphore);
 
 
        printf("Customer %s with id %d picked up %s the remaining in shelf is %d what in storage %d \n", customer->name, customer->id, shared_items[random_index].name, shared_items[random_index].shelfAmount , shared_items[random_index].storageAmount);
 
+        // Detach from shared memory
+        if (shmdt(shared_items) == -1) {
+            perror("shmdt");
+            exit(EXIT_FAILURE);
+        }
 
-        sleep(BETWEEN_EACH_PICK_FOR_CUSTOMER); // Sleep for 5 seconds
+        sleep(14); // Sleep for 5 seconds
 
 
-    }
-
-    // Detach from shared memory
-    if (shmdt(shared_items) == -1) {
-        perror("shmdt");
-        exit(EXIT_FAILURE);
     }
 
 
@@ -181,6 +177,7 @@ void fill_cart(struct Customer *customer) {
 
    // printf("\n----------------------------------------\n");
     pick_up_items(customer);
+
     //printf("\n----------------------------------------\n");
 
 

@@ -169,11 +169,10 @@ int main( int argc, char *argv[] ){
 
 
     int j = 0;
-    while (get_total_customers() <= c.customerCapacity) {
+    while (get_total_customers() < c.customerCapacity) {
 
         // Generate a random number of customers for this batch within the min-max range
         int customersInBatch = c.minCustomerArrivalRate + rand() % (c.maxCustomerArrivalRate - c.minCustomerArrivalRate + 1);
-
 
         for (int i = 0; i < customersInBatch  ; i++) {
 
@@ -185,20 +184,16 @@ int main( int argc, char *argv[] ){
                 break;
             }
 
-            if((get_total_customers() < c.customerCapacity)){
+            arr_customers_pid[j] = fork();
 
-                arr_customers_pid[j] = fork();
-
-                if (arr_customers_pid[j] < 0) {
-                    perror("Error: Unable to fork customer process.\n");
-                    exit(EXIT_FAILURE);
-                } else if (arr_customers_pid[j] == 0) {
-                    increment_total_customers(1);
-                    execlp("./customer", "./customer", NULL);
-                    perror("Error: Unable to execute customer process.\n");
-                    exit(EXIT_FAILURE);
-                }
-
+            if (arr_customers_pid[j] < 0) {
+                perror("Error: Unable to fork customer process.\n");
+                exit(EXIT_FAILURE);
+            } else if (arr_customers_pid[j] == 0) {
+                increment_total_customers(1);
+                execlp("./customer", "./customer", NULL);
+                perror("Error: Unable to execute customer process.\n");
+                exit(EXIT_FAILURE);
             }
 
             usleep(customersInBatch*100000); // Sleep for 10ms to ensure different seed for each customer
@@ -221,9 +216,7 @@ int main( int argc, char *argv[] ){
 
     }
 
-    printf("Entering  main loop\n");
 
-    // safe wait until have a signal to terminate.
     while (1){
 
         if (terminate_flag) {
@@ -255,7 +248,7 @@ void terminate_processes(pid_t *team_pids  ,pid_t drawer, pid_t timer, pid_t *ar
 
 
     for(int i = 0; i < c.numberOfShelvingTeams; i++) {
-        kill(team_pids[i], SIGTERM);
+        kill(team_pids[i], SIGKILL);
     }
 
     sleep(3);
@@ -447,6 +440,12 @@ void clean_STM(){
             perror("sem_unlink");
             // Consider continuing instead of exiting, so all semaphores get a chance to be unlinked
         }
+    }
+
+    for (int i = 0; i < c.numberOfProducts; ++i) {
+
+        pthread_mutex_destroy(&shared_items[i].lock);
+
     }
 
 

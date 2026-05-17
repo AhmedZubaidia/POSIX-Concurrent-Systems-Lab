@@ -14,13 +14,23 @@ void clean_threads();
 volatile sig_atomic_t terminate_flag = 0;
 
 void simple_sig_handler(int sig) {
+
+    printf("Signal %d received. Terminating...\n", sig);
     terminate_flag = 1;
 }
 
 int main(int argc, char *argv[]) {
 
-     signal(SIGINT, simple_sig_handler);
+    // Make sure Config c is initialized properly before this point
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = simple_sig_handler;
+    sa.sa_flags = 0;
 
+    if(sigaction(SIGTERM, &sa, NULL) == -1) {
+        perror("Error setting signal handler");
+        exit(EXIT_FAILURE);
+    }
 
     if (argc != 2) {
         fprintf(stderr, "Usage: %s <index>\n", argv[0]);
@@ -46,11 +56,13 @@ int main(int argc, char *argv[]) {
         sleep(1); // Simple wait instead of busy wait, adjust time as needed
     }
 
-    printf("Team %d has been terminated\n", team.teamId);
-    pthread_mutex_destroy(&team.teamLock);
-    pthread_mutex_destroy(&employeeLock);
-    pthread_barrier_destroy(&barrier_for_employee);
+    for (int i = 1; i <= c.numberOfShelvingTeams; ++i) {
+        pthread_cond_destroy(&team.condition_var);
+        free(team.employees);
+    }
 
+
+    printf("Simulation is ending. Cleaning up resources...\n");
 
     return 0;
 

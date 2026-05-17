@@ -7,7 +7,6 @@
 #include "semphores.h"
 #include "shared_memories.h"
 #include "constants.h"
-#include <stdbool.h>
 
 
 typedef struct RestockInfo {
@@ -22,17 +21,20 @@ typedef struct Team {
     pthread_t manager;
     pthread_t *employees; // Dynamic array of employee threads
     pthread_cond_t condition_var; // Condition variable for signaling employees
-    RestockInfo restockInfo; // Shared information for restocking products between manager and employees
+    RestockInfo restockInfo; // Shared information for restocking
     pthread_mutex_t teamLock; // Mutex for team coordination
+    pthread_mutex_t employeeLock; // Mutex for employee coordination
     int *employeeIDs; // Array of employee IDs
+    int totalRestocked;
+
+
     int teamId; // Team ID
 
 } Team;
 
-int totalRestocked = 0; // Total number of items restocked by all employees in a team
-int safe_unlock = 0; // this safe lock we use it to make sure that employees are done with restocking.
-pthread_barrier_t barrier_for_employee; // Barrier for employee coordination
-pthread_mutex_t employeeLock; // Mutex for employee coordination
+int totalRestocked = 0;
+int safe_unlock = 0;
+
 
 // Global dynamic arrays of products and teams
 
@@ -47,7 +49,8 @@ struct Team  team ;
 void initializeTeams() {
 
 
-        pthread_barrier_init( &barrier_for_employee, NULL, c.numberOfEmployeesPerTeam); // Initialize barrier
+
+
         team.employees = malloc(c.numberOfEmployeesPerTeam * sizeof(pthread_t)); // Dynamic allocation for employees
         team.employeeIDs = malloc(c.numberOfEmployeesPerTeam * sizeof(int)); // Allocate memory for employee IDs
 
@@ -58,7 +61,7 @@ void initializeTeams() {
             exit(EXIT_FAILURE);
         }
         pthread_mutex_init(&team.teamLock, NULL); // Initialize mutex
-        pthread_mutex_init( &employeeLock, NULL); // Initialize mutex
+        pthread_mutex_init(&team.employeeLock, NULL); // Initialize mutex
 
 
     usleep(100000);
@@ -117,41 +120,8 @@ void *managerFunction(void *arg) {
 
         pick_product_semaphore = get_semaphore(shared_items[productIndex].semName);
 
-
-        bool acquired = false;
-
-        // keep checking for a product that is not being restocked
-        while (!acquired) {
-
-            for (int i = 0; i < c.numberOfProducts; ++i) { // Loop through all products
-
-                productIndex = (productIndex + 1) % num_of_products; // Increment product index
-                pick_product_semaphore = get_semaphore(shared_items[productIndex].semName);
-
-                if (sem_trywait(pick_product_semaphore) == 0) {
-
-                    // Successfully acquired the semaphore
-                    acquired = true;
-                    break; // Break out of the for-loop
-
-                } else if (errno == EAGAIN) {
-
-                    // Semaphore is not available, try next product
-                    usleep(100000); // Small delay to prevent hammering
-
-                } else {
-                    // An error occurred
-                    perror("sem_trywait failed");
-                    exit(EXIT_FAILURE); // Or handle error appropriately
-                }
-
-            }
-        }
-
-
-      //  lock_sem(pick_product_semaphore);
-
-        safe_unlock = 0; // this safe lock we use it to make sure that employees are done with restocking.
+        lock_sem(pick_product_semaphore);
+        safe_unlock = 0; // for making sure that employees are done with restocking
 
         printf(" i am after lock manger %d i will check product %s i see num on shelf %d  's \n ", team.teamId, shared_items[productIndex].name, shared_items[productIndex].shelfAmount);
 
@@ -187,7 +157,7 @@ void *managerFunction(void *arg) {
             // Adjust the quantities on shelves and in storage
 
             if (shared_items[productIndex].storageAmount == 0) {
-                goto go;
+                goto goback;
             }
 
             shared_items[productIndex].storageAmount -= amountToTakeFromStorage;
@@ -203,41 +173,25 @@ void *managerFunction(void *arg) {
 
             pthread_cond_broadcast(&team.condition_var); // Signal employees
 
+            sleep(3); // for making sure that employees are done with restocking
 
-            // Wait for employees to finish restocking
-
-            while (safe_unlock <1 ) {
-                sleep(1);
-                printf(" iam manager %d i am waiting for employees to finish restocking \n", team.teamId);
-            }
-
-
-            sleep(1); // for making sure that employees are done with restocking
-
-            unlock_sem(pick_product_semaphore);
-            close_semaphore(pick_product_semaphore);
 
         }else{
-
-            // if no need to restock then unlock the semaphore of the product.
             unlock_sem(pick_product_semaphore);
             close_semaphore(pick_product_semaphore);
         }
 
 
-        go:
+    goback:
 
-        shared_items[productIndex].team_working_on_it = 0; // for openGl
         // Detach from shared memory
         if (shmdt(shared_items) == -1) {
             printf(" error \n");
             perror("shmdt");
             exit(EXIT_FAILURE);
         }
-      //  shared_items[productIndex].team_working_on_it = 0;
 
         sleep(BETWEEN_MANGER_CHECKS);  // Wait a bit before checking again
-
     }
 
 
@@ -253,9 +207,7 @@ void *employeeFunction(void *arg) {
         }
 
         pthread_mutex_unlock(&team.teamLock); // Unlock teamLock (automatically re-acquired after signal
-        pthread_barrier_wait(&barrier_for_employee); // Wait for all employees to be ready (barrier
 
-        printf("Employee %d of team %d is restocking product %s\n", employeeID, team.teamId, products[team.restockInfo.productIndex].name);
 
         // If there is available work, proceed with restocking
         int productIndex = team.restockInfo.productIndex;
@@ -277,48 +229,26 @@ void *employeeFunction(void *arg) {
 
         usleep(BETWEEN_EMPLOYEES_RESTOCK); // to make sure that employees are not restocking at the same time
         // Restocking process
+        while (totalRestocked < team.restockInfo.amountAvailable) {
 
+            pthread_mutex_lock(&team.employeeLock); // Lock employeeLock for shared resource access
 
-        while (shared_items[productIndex].shelfAmount < c.amountPerProductOnShelves && totalRestocked < team.restockInfo.amountAvailable ) {
-
-
-            pthread_mutex_lock(&employeeLock); // Lock employeeLock for shared resource access
-
-            if (!(shared_items[productIndex].shelfAmount >= c.amountPerProductOnShelves)) {
+            if (!(shared_items[productIndex].shelfAmount >= c.amountPerProductOnShelves) && totalRestocked < team.restockInfo.amountAvailable) {
 
                 shared_items[productIndex].shelfAmount++;
+                totalRestocked++;
             }
 
-
-            shared_items[productIndex].team_working_on_it = team.teamId; // Set team ID for product for openGl
-            printf(" the value of team id is %d \n", shared_items[productIndex].team_working_on_it);
-
-            totalRestocked++;
             printf("Employee %d of team %d is restocking product %s, what we restocked for now on shelf %d\n", employeeID, team.teamId, shared_items[productIndex].name, totalRestocked);
 
+            int sleepTime = rand() % 1000000; // Random sleep time in microseconds
+            usleep(sleepTime);
 
-            usleep(500000); // for putting items on shelf.
+            pthread_mutex_unlock(&team.employeeLock); // Unlock
 
-            pthread_mutex_unlock(&employeeLock); // Unlock
-
-            sleep(TIME_TO_EACH_EMPLOYEE_TO_RESTOCK); // Simulate to go and pick up item then put it on shelf
+            sleep(TIME_TO_EACH_EMPLOYEE_TO_RESTOCK); // Simulate restocking time (sleep
 
         }
-
-
-
-        // reset team ID for product for openGl.
-        pthread_barrier_wait(&barrier_for_employee); // Wait for all employees to be ready to finish
-
-        pthread_mutex_lock(&employeeLock); //
-
-        safe_unlock++; // make the manger go and see if there is any product to restock. unlock the semaphore of the product.
-
-        shared_items[productIndex].team_working_on_it = 0; // for openGl
-
-        pthread_mutex_unlock(&employeeLock); //
-
-        team.restockInfo.amountAvailable = 0; // Reset shared restock info
 
         // Detach from shared memory
         if (shmdt(shared_items) == -1) {
@@ -327,9 +257,23 @@ void *employeeFunction(void *arg) {
             exit(EXIT_FAILURE);
         }
 
+        pthread_mutex_lock(&team.employeeLock); // Lock employeeLock for shared resource access
+        safe_unlock++;
+        pthread_mutex_unlock(&team.employeeLock); // Unlock
+
+        if(safe_unlock ==1){
+            usleep(10000); // wait all other employees to finish
+            printf(" from team %d safe unlock done \n", team.teamId);
+            unlock_sem(pick_product_semaphore);
+            close_semaphore(pick_product_semaphore);
+        }
+
+        team.restockInfo.amountAvailable = 0; // Reset shared restock info
 
     }
 
+    free(arg); // Free dynamically allocated team ID
+    pthread_exit(NULL);
 }
 
 
