@@ -1,0 +1,28 @@
+# Build artifacts
+*.o
+*.obj
+*.out
+*.so
+*.dll
+*.dylib
+*.exe
+
+# Compiled executables produced by `make` (no extension on Linux)
+supermarket_simulation/main
+supermarket_simulation/drawer
+supermarket_simulation/customer
+supermarket_simulation/shelving_team
+supermarket_simulation/timer
+
+# Editor / IDE state
+.vscode/
+.idea/
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+
+# Local logs that pthreads / IPC instrumentation may emit
+*.log
+core
+core.*
